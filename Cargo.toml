@@ -1,0 +1,22 @@
+[package]
+name = "textutil"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "textutil"
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[[bin]]
+name = "textutil_app"
+path = "src/main.rs"
+
+[dependencies]
+eframe = "0.20.1"
+#egui_glow = "0.20.1"
+#glow = "0.11"
+#three-d = { version = "0.13", default-features = false }
+rfd = "0.10"
