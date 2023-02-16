@@ -33,6 +33,7 @@ pub fn run_app() {
 
 #[derive(Debug)]
 struct MainApp {
+	force_command_focus: bool,
 	command: String,
 	text: String,
 	plugins: HashMap<String, String>, // BEContext.parse() -> statement list -> BEContext.compile() -> JsResult<Gc<CodeBlock>> -> BEContext.execute().
@@ -42,6 +43,7 @@ impl MainApp {
 	fn new(cc: &eframe::CreationContext<'_>) -> Self {
 		setup_custom_fonts(&cc.egui_ctx);
 		let mut app = Self {
+			force_command_focus: true,
 			command: "".to_owned(),
 			text: "".to_owned(),
 			plugins: HashMap::new(),
@@ -55,7 +57,10 @@ impl MainApp {
 
 		let startup_plugin = context.eval(plugin_code);
 		if startup_plugin.is_err() {
-			println!("{}", startup_plugin.err().unwrap().as_string().unwrap());
+			println!("{:?}", startup_plugin.as_ref().err());
+			println!("{:?}", &startup_plugin.as_ref().err().unwrap());
+			println!("{:?}", &startup_plugin.as_ref().err().unwrap().to_string(&mut context).unwrap());
+			println!("{:?}", &startup_plugin.as_ref().err().unwrap().to_string(&mut context).unwrap().as_str());
 		}
 
 		/*
@@ -95,13 +100,12 @@ impl MainApp {
 		}
 	}
 
-	fn invoke_plugin(&mut self, plugin_name: &str) {
+	fn invoke_plugin(&mut self, js_code: &str) {
 		let mut js_context = BEContext::default();
 		js_context.register_global_builtin_function("say_hello", 1, say_hello);
 		js_context.register_global_property("MY_PROJECT_VERSION", "1.0.0", BEAttribute::all());
 
 		let mut context = BEContext::default();
-		let js_code = plugin_name;
 		match context.eval(js_code) {
 			Ok(res) => {
 				let out_str = res.to_string(&mut context).unwrap();
@@ -114,13 +118,16 @@ impl MainApp {
 	}
 
 	fn enumerate_plugins(&mut self) {
-		for entry in WalkDir::new("plugins").into_iter().filter_map(|e| e.ok()).filter(|e| e.path().ends_with("js")) {
+		//for entry in WalkDir::new("plugins").into_iter().filter_map(|e| e.ok()).filter(|e| e.path().ends_with("js")) {
+		for entry in WalkDir::new("plugins").into_iter().filter_map(|e| e.ok()) {
 			if let Ok(file) = File::open(entry.path()) {
 				let mut buf_reader = BufReader::new(file);
 				let mut contents = String::new();
 				let read_op = buf_reader.read_to_string(&mut contents);
 				if read_op.is_ok() {
-					self.plugins.insert(entry.path().file_stem().unwrap().to_str().unwrap().to_lowercase(), contents);
+					let plugin_name = entry.path().file_stem().unwrap().to_str().expect("Couldn't convert from OS string to string.  This seems impossible.").to_lowercase();
+					println!("Loaded plugin with name {}", &plugin_name);
+					self.plugins.insert(plugin_name, contents);
 				}
 				//println!("{}", entry.path().display());
 			}
@@ -131,10 +138,34 @@ impl MainApp {
 impl eframe::App for MainApp {
 	fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
 		egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-			let layout = egui::Layout::top_down(egui::Align::LEFT).with_main_justify(true);
+			//let layout = egui::Layout::top_down(egui::Align::LEFT).with_main_justify(true);
+			let layout = egui::Layout::left_to_right(egui::Align::LEFT).with_main_justify(true);
 			ui.allocate_ui_with_layout(ui.available_size(), layout, |ui| {
-				//ui.add()
-				ui.text_edit_singleline(&mut self.command)
+				//ui.text_edit_singleline(&mut self.command);
+				let response = ui.add(egui::TextEdit::singleline(&mut self.command));
+
+				// If Shift+Space is hit, focus on this command bar.
+				if self.force_command_focus {
+					response.request_focus();
+					self.force_command_focus = false;
+				}
+
+				if response.changed() {
+					// TODO: Autocomplete.
+				}
+
+				//if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+				//if response.lost_focus() && ctx.input().key_pressed(egui::Key::Enter) {
+				if response.lost_focus() && ui.input().key_pressed(egui::Key::Enter) {
+					let cmd = self.command.clone();
+					if let Some(code) = self.plugins.get(&cmd) {
+						let code = code.clone();
+						//self.invoke_plugin(&cmd);
+						self.dumb_run_self_contained(&code);
+					} else {
+						println!("No plugin with name {} found.", &cmd);
+					}
+				}
 			})
 		});
 
@@ -150,21 +181,15 @@ impl eframe::App for MainApp {
 			});
 		});
 
+		if ctx.input().modifiers.shift && ctx.input().key_released(egui::Key::Space) {
+			self.force_command_focus = true;
+		}
+
 		/*
 		if ctx.input(|i| i.key_pressed(egui::Key::A)) {}
-		if ctx.input(|i| i.key_down(egui::Key::A)) {
-			ui.ctx().request_repaint(); // make sure we note the holding.
-		}
-		*/
-
 		if ctx.input().key_released(egui::Key::Enter) {
-			println!("Enter struck.");
-			let cmd = self.command.clone();
-			if self.plugins.contains_key(&cmd) {
-				//self.invoke_plugin(&cmd);
-				self.dumb_run_self_contained(&cmd);
-			}
-		}
+		//ui.ctx().request_repaint(); // make sure we note the holding.
+		*/
 	}
 }
 
